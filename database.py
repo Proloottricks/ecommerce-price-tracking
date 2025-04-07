@@ -1,23 +1,18 @@
 import os
 from pymongo import MongoClient
-from dotenv import load_dotenv
-
-load_dotenv()
+from datetime import datetime
 
 MONGO_URI = os.getenv("MONGO_URI")
 client = MongoClient(MONGO_URI)
 db = client["price_tracker"]
 collection = db["products"]
 
-def init_db():
-    client.admin.command('ping')  # Check connection
-
-def save_product(data):
-    collection.update_one(
-        {"chat_id": data["chat_id"], "url": data["url"]},
-        {"$set": data},
-        upsert=True
-    )
-
-def get_product(url, chat_id):
-    return collection.find_one({"chat_id": chat_id, "url": url})
+def store_price(url, title, price, site):
+    data = {
+        "url": url,
+        "title": title,
+        "price": price,
+        "site": site,
+        "timestamp": datetime.utcnow()
+    }
+    collection.insert_one(data)
