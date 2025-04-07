@@ -1,62 +1,69 @@
 import requests
 from bs4 import BeautifulSoup
+import re
 
 headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0"
 }
 
-def scrape_amazon(url):
+def get_price_data(url):
     try:
-        page = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(page.content, "html.parser")
-        title = soup.select_one("#productTitle")
-        price = soup.select_one(".a-price .a-offscreen")
-
-        return {
-            "title": title.get_text(strip=True) if title else "N/A",
-            "price": price.get_text(strip=True) if price else "N/A"
-        }
+        domain = get_domain(url)
+        if "amazon" in domain:
+            return scrape_amazon(url)
+        elif "flipkart" in domain or "shopsy" in domain:
+            return scrape_flipkart(url)
+        elif "ajio" in domain:
+            return scrape_ajio(url)
+        else:
+            return None
     except Exception as e:
-        return {"error": str(e)}
+        return None
+
+def get_domain(url):
+    return re.findall(r'https?://(?:www\.)?([^/]+)', url)[0]
+
+def clean_price(p):
+    return int(re.sub(r"[^\d]", "", p.split()[0]))
+
+def scrape_amazon(url):
+    res = requests.get(url, headers=headers)
+    soup = BeautifulSoup(res.text, 'html.parser')
+
+    title = soup.find(id="productTitle").get_text(strip=True)
+    price_tag = soup.find("span", {"class": "a-price-whole"}) or soup.find("span", {"class": "a-offscreen"})
+    img = soup.find("img", {"id": "landingImage"})["src"]
+
+    return {
+        "title": title,
+        "price": clean_price(price_tag.text),
+        "image": img
+    }
 
 def scrape_flipkart(url):
-    try:
-        page = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(page.content, "html.parser")
-        title = soup.select_one("span.B_NuCI")
-        price = soup.select_one("div._30jeq3")
+    res = requests.get(url, headers=headers)
+    soup = BeautifulSoup(res.text, "html.parser")
 
-        return {
-            "title": title.get_text(strip=True) if title else "N/A",
-            "price": price.get_text(strip=True) if price else "N/A"
-        }
-    except Exception as e:
-        return {"error": str(e)}
+    title = soup.find("span", {"class": "B_NuCI"}).get_text(strip=True)
+    price = soup.find("div", {"class": "_30jeq3 _16Jk6d"}).text
+    img = soup.find("img", {"class": "_396cs4 _2amPTt _3qGmMb"})["src"]
+
+    return {
+        "title": title,
+        "price": clean_price(price),
+        "image": img
+    }
 
 def scrape_ajio(url):
-    try:
-        page = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(page.content, "html.parser")
-        title = soup.select_one("h1.pdp-title")
-        price = soup.select_one("div.product-price span.price")
+    res = requests.get(url, headers=headers)
+    soup = BeautifulSoup(res.text, "html.parser")
 
-        return {
-            "title": title.get_text(strip=True) if title else "N/A",
-            "price": price.get_text(strip=True) if price else "N/A"
-        }
-    except Exception as e:
-        return {"error": str(e)}
+    title = soup.find("h1", {"class": "prod-title"}).get_text(strip=True)
+    price = soup.find("div", {"class": "price"}).find("span").get_text(strip=True)
+    img = soup.find("img", {"class": "image-container"})["src"]
 
-def scrape_shopsy(url):
-    try:
-        page = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(page.content, "html.parser")
-        title = soup.select_one("span.B_NuCI")
-        price = soup.select_one("div._30jeq3")
-
-        return {
-            "title": title.get_text(strip=True) if title else "N/A",
-            "price": price.get_text(strip=True) if price else "N/A"
-        }
-    except Exception as e:
-        return {"error": str(e)}
+    return {
+        "title": title,
+        "price": clean_price(price),
+        "image": img
+    }
