@@ -1,69 +1,44 @@
+import re
 import requests
 from bs4 import BeautifulSoup
-import re
+from database import save_product
+from utils import extract_domain
 
 headers = {
-    "User-Agent": "Mozilla/5.0"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 }
 
-def get_price_data(url):
+async def scrape_and_store_price(url, chat_id):
     try:
-        domain = get_domain(url)
+        domain = extract_domain(url)
+        title, price = None, None
+
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.text, "html.parser")
+
         if "amazon" in domain:
-            return scrape_amazon(url)
-        elif "flipkart" in domain or "shopsy" in domain:
-            return scrape_flipkart(url)
+            title = soup.select_one("#productTitle")
+            price = soup.select_one(".a-price .a-offscreen")
+        elif "flipkart" in domain:
+            title = soup.select_one("span.B_NuCI")
+            price = soup.select_one("div._30jeq3")
         elif "ajio" in domain:
-            return scrape_ajio(url)
-        else:
-            return None
+            title = soup.select_one("h1.title")
+            price = soup.select_one("div.price .amount")
+        elif "shopsy" in domain:
+            title = soup.select_one("span.B_NuCI")
+            price = soup.select_one("div._30jeq3")
+
+        if not title or not price:
+            return "Could not scrape the product details. Try another link."
+
+        data = {
+            "chat_id": chat_id,
+            "url": url,
+            "title": title.get_text(strip=True),
+            "price": price.get_text(strip=True)
+        }
+        save_product(data)
+        return f"Tracking started: {data['title']} at {data['price']}"
     except Exception as e:
-        return None
-
-def get_domain(url):
-    return re.findall(r'https?://(?:www\.)?([^/]+)', url)[0]
-
-def clean_price(p):
-    return int(re.sub(r"[^\d]", "", p.split()[0]))
-
-def scrape_amazon(url):
-    res = requests.get(url, headers=headers)
-    soup = BeautifulSoup(res.text, 'html.parser')
-
-    title = soup.find(id="productTitle").get_text(strip=True)
-    price_tag = soup.find("span", {"class": "a-price-whole"}) or soup.find("span", {"class": "a-offscreen"})
-    img = soup.find("img", {"id": "landingImage"})["src"]
-
-    return {
-        "title": title,
-        "price": clean_price(price_tag.text),
-        "image": img
-    }
-
-def scrape_flipkart(url):
-    res = requests.get(url, headers=headers)
-    soup = BeautifulSoup(res.text, "html.parser")
-
-    title = soup.find("span", {"class": "B_NuCI"}).get_text(strip=True)
-    price = soup.find("div", {"class": "_30jeq3 _16Jk6d"}).text
-    img = soup.find("img", {"class": "_396cs4 _2amPTt _3qGmMb"})["src"]
-
-    return {
-        "title": title,
-        "price": clean_price(price),
-        "image": img
-    }
-
-def scrape_ajio(url):
-    res = requests.get(url, headers=headers)
-    soup = BeautifulSoup(res.text, "html.parser")
-
-    title = soup.find("h1", {"class": "prod-title"}).get_text(strip=True)
-    price = soup.find("div", {"class": "price"}).find("span").get_text(strip=True)
-    img = soup.find("img", {"class": "image-container"})["src"]
-
-    return {
-        "title": title,
-        "price": clean_price(price),
-        "image": img
-    }
+        return f"Error: {str(e)}"
