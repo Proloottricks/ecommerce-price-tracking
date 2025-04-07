@@ -1,7 +1,11 @@
-from urllib.parse import urlparse
+from dotenv import load_dotenv
+import os
 
-def extract_domain(url):
-    return urlparse(url).netloc
+load_dotenv()
 
-def format_price_message(product):
-    return f"Product: {product['title']}\nPrice: {product['price']}\nURL: {product['url']}"
+TAGS = {
+    "AMAZON_TAG": os.getenv("AMAZON_TAG"),
+    "FLIPKART_TAG": os.getenv("FLIPKART_TAG"),
+    "AJIO_TAG": os.getenv("AJIO_TAG"),
+    "SHOPSY_TAG": os.getenv("SHOPSY_TAG")
+}
