@@ -1,44 +1,32 @@
 import re
-import requests
-from bs4 import BeautifulSoup
-from database import save_product
-from utils import extract_domain
 
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-}
+def get_platform_and_clean_url(url):
+    if 'amazon.' in url:
+        return 'amazon', url.split('?')[0]
+    elif 'flipkart.' in url:
+        return 'flipkart', url.split('?')[0]
+    elif 'ajio.' in url:
+        return 'ajio', url.split('?')[0]
+    elif 'shopsy.' in url:
+        return 'shopsy', url.split('?')[0]
+    else:
+        return 'unknown', url
 
-async def scrape_and_store_price(url, chat_id):
-    try:
-        domain = extract_domain(url)
-        title, price = None, None
+def add_affiliate_tag(url, platform, tags):
+    if platform == "amazon":
+        if "tag=" not in url:
+            return f"{url}?tag={tags.get('AMAZON_TAG', '')}"
+    elif platform == "flipkart":
+        if "affid=" not in url:
+            return f"{url}&affid={tags.get('FLIPKART_TAG', '')}"
+    elif platform == "ajio":
+        if "affid=" not in url:
+            return f"{url}?affid={tags.get('AJIO_TAG', '')}"
+    elif platform == "shopsy":
+        if "affid=" not in url:
+            return f"{url}?affid={tags.get('SHOPSY_TAG', '')}"
+    return url
 
-        response = requests.get(url, headers=headers)
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        if "amazon" in domain:
-            title = soup.select_one("#productTitle")
-            price = soup.select_one(".a-price .a-offscreen")
-        elif "flipkart" in domain:
-            title = soup.select_one("span.B_NuCI")
-            price = soup.select_one("div._30jeq3")
-        elif "ajio" in domain:
-            title = soup.select_one("h1.title")
-            price = soup.select_one("div.price .amount")
-        elif "shopsy" in domain:
-            title = soup.select_one("span.B_NuCI")
-            price = soup.select_one("div._30jeq3")
-
-        if not title or not price:
-            return "Could not scrape the product details. Try another link."
-
-        data = {
-            "chat_id": chat_id,
-            "url": url,
-            "title": title.get_text(strip=True),
-            "price": price.get_text(strip=True)
-        }
-        save_product(data)
-        return f"Tracking started: {data['title']} at {data['price']}"
-    except Exception as e:
-        return f"Error: {str(e)}"
+def fetch_price_and_title(url, platform):
+    # Placeholder dummy logic — replace with actual scraping logic
+    return "Product Title
