@@ -1,67 +1,60 @@
+import re
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from database import store_price
-
-def add_affiliate_tag(url, platform):
-    parsed = urlparse(url)
-    query = parse_qs(parsed.query)
-
-    if platform == "amazon":
-        query["tag"] = ["yourtag-21"]
-    elif platform == "flipkart":
-        query["affid"] = ["yourtag"]
-    elif platform == "ajio":
-        query["affid"] = ["yourtag"]
-    elif platform == "shopsy":
-        query["affid"] = ["yourtag"]
-
-    new_query = urlencode(query, doseq=True)
-    updated_url = urlunparse(parsed._replace(query=new_query))
-    return updated_url
+from utils import extract_price, add_affiliate_tag
 
 def scrape_and_store_price(url):
-    headers = {"User-Agent": "Mozilla/5.0"}
-    domain = urlparse(url).netloc
-
-    platform = None
-    if "amazon" in domain:
-        platform = "amazon"
-    elif "flipkart" in domain:
-        platform = "flipkart"
-    elif "ajio" in domain:
-        platform = "ajio"
-    elif "shopsy" in domain:
-        platform = "shopsy"
-    else:
-        return "Unsupported platform"
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
 
     try:
-        response = requests.get(url, headers=headers)
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        if platform == "amazon":
-            title = soup.find(id="productTitle")
-            price = soup.find("span", {"class": "a-offscreen"})
-        elif platform == "flipkart":
-            title = soup.find("span", {"class": "B_NuCI"})
-            price = soup.find("div", {"class": "_30jeq3 _16Jk6d"})
-        elif platform == "ajio":
-            title = soup.find("h1", {"class": "prod-name"})
-            price = soup.find("div", {"class": "price  components-base-style__salePrice"})
-        elif platform == "shopsy":
-            title = soup.find("span", {"class": "B_NuCI"})
-            price = soup.find("div", {"class": "_30jeq3 _16Jk6d"})
-        else:
-            return "Platform not supported"
-
-        product_title = title.text.strip() if title else "Product Title not found"
-        product_price = price.text.strip() if price else "Price not found"
-
-        updated_url = add_affiliate_tag(url, platform)
-        store_price(updated_url, product_price)
-
-        return f"**{product_title}**\nPrice: {product_price}\n[Buy Now]({updated_url})"
-
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, "html.parser")
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Failed to fetch page: {e}"
+
+    site = identify_site(url)
+
+    if site == "amazon":
+        title_tag = soup.find(id="productTitle")
+        price_tag = soup.find("span", {"class": "a-price-whole"})
+    elif site == "flipkart":
+        title_tag = soup.find("span", {"class": "B_NuCI"})
+        price_tag = soup.find("div", {"class": "_30jeq3 _16Jk6d"})
+    elif site == "ajio":
+        title_tag = soup.find("h1", {"class": "prod-name"})
+        price_tag = soup.find("div", {"class": "prod-sp"})
+    elif site == "shopsy":
+        title_tag = soup.find("span", {"class": "B_NuCI"})
+        price_tag = soup.find("div", {"class": "_30jeq3 _16Jk6d"})
+    else:
+        return "Site not supported"
+
+    if not title_tag or not price_tag:
+        return "Failed to extract product info"
+
+    title = title_tag.get_text(strip=True)
+    price = extract_price(price_tag.get_text())
+
+    if not price:
+        return "Price not found"
+
+    affiliate_url = add_affiliate_tag(url, site)
+    store_price(affiliate_url, title, price, site)
+
+    return f"**{site.upper()}**\nTitle: {title}\nPrice: ₹{price}\n[View Product]({affiliate_url})"
+
+def identify_site(url):
+    if "amazon." in url:
+        return "amazon"
+    elif "flipkart.com" in url:
+        return "flipkart"
+    elif "ajio.com" in url:
+        return "ajio"
+    elif "shopsy.in" in url:
+        return "shopsy"
+    else:
+        return "unknown"
