@@ -1,14 +1,7 @@
 import os
 import logging
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-    filters,
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from dotenv import load_dotenv
 from tracker import get_price_details
 from affiliate import convert_to_affiliate
@@ -21,68 +14,65 @@ logging.basicConfig(
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+MONGO_URL = os.getenv("MONGO_URL")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    add_user(user.id, user.username)
     await update.message.reply_text(
-        "Welcome to the Price Tracker Bot!\n\n"
-        "Send me an Amazon, Flipkart, Ajio, or Shopsy product link to start tracking.\n\n"
-        "Use /myproducts to view your tracked items."
+        f"Hello {user.first_name}! Send me an Amazon, Flipkart, Ajio, or Shopsy product link to track its price."
     )
+    add_user(user.id)
 
 
-async def track_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    url = update.message.text.strip()
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    text = update.message.text.strip()
 
-    await update.message.reply_text("Fetching product details...")
+    if any(site in text for site in ["amazon", "flipkart", "ajio", "shopsy"]):
+        await update.message.reply_text("Getting product details...")
 
-    try:
-        product = get_price_details(url)
-        if not product:
-            await update.message.reply_text("Failed to fetch product details.")
+        details = get_price_details(text)
+        if not details:
+            await update.message.reply_text("Couldn't fetch product details. Please try a valid URL.")
             return
 
-        product["url"] = convert_to_affiliate(url)
-        add_product(user_id, product)
+        affiliate_link = convert_to_affiliate(text)
+        add_product(user.id, affiliate_link, details)
 
         await update.message.reply_photo(
-            photo=product["image"],
-            caption=f"*{product['title']}*\nPrice: ₹{product['price']}\n{product['url']}",
+            photo=details["image"],
+            caption=f"**{details['title']}**\n\nCurrent Price: ₹{details['price']}\n\n[Buy Now]({affiliate_link})",
             parse_mode="Markdown",
         )
-    except Exception as e:
-        logging.error(f"Error: {e}")
-        await update.message.reply_text("Something went wrong while processing the link.")
+    else:
+        await update.message.reply_text("Please send a valid product link.")
 
 
-async def my_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    products = get_user_products(user_id)
+async def track(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    products = get_user_products(user.id)
 
     if not products:
-        await update.message.reply_text("You have not tracked any products yet.")
+        await update.message.reply_text("You're not tracking any products yet.")
         return
 
     keyboard = [
-        [InlineKeyboardButton(p["title"], url=p["url"])]
-        for p in products
+        [InlineKeyboardButton(p["title"][:50], url=p["url"])] for p in products
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Your Tracked Products:", reply_markup=reply_markup)
 
-
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("myproducts", my_products))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, track_product))
-
-    app.run_polling()
+    await update.message.reply_text(
+        "Here are your tracked products:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
 
 if __name__ == "__main__":
-    main()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("track", track))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    print("Bot is running...")
+    app.run_polling()
