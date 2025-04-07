@@ -1,38 +1,41 @@
-import requests from bs4 import BeautifulSoup import re
+import requests
+from bs4 import BeautifulSoup
+import re
 
-def get_price_details(url): headers = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36" }
+headers = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
-try:
-    res = requests.get(url, headers=headers, timeout=10)
-    soup = BeautifulSoup(res.text, 'html.parser')
 
-    if 'amazon' in url:
-        title = soup.find(id='productTitle').get_text(strip=True)
-        price_tag = soup.find('span', {'class': 'a-price-whole'})
-        price = price_tag.get_text(strip=True).replace(',', '') if price_tag else '0'
-        return title, int(float(price)), 'Amazon'
+def get_price_details(url):
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
 
-    elif 'flipkart' in url:
-        title = soup.find('span', {'class': 'B_NuCI'}).get_text(strip=True)
-        price_tag = soup.find('div', {'class': '_30jeq3 _16Jk6d'})
-        price = price_tag.get_text(strip=True).replace('₹', '').replace(',', '') if price_tag else '0'
-        return title, int(float(price)), 'Flipkart'
+        if "amazon" in url:
+            title = soup.find(id="productTitle").get_text(strip=True)
+            price = soup.find("span", {"class": "a-price-whole"}).get_text(strip=True).replace(",", "")
+            image = soup.find("img", {"id": "landingImage"})["src"]
 
-    elif 'ajio' in url:
-        title_tag = soup.find('h1', {'class': 'prod-title'})
-        price_tag = soup.find('div', {'class': 'prod-sp'})
-        title = title_tag.get_text(strip=True) if title_tag else 'Ajio Product'
-        price = re.findall(r'\d+', price_tag.get_text()) if price_tag else ['0']
-        return title, int(''.join(price)), 'Ajio'
+        elif "flipkart" in url:
+            title = soup.find("span", {"class": "B_NuCI"}).get_text(strip=True)
+            price = re.findall(r"₹[\d,]+", res.text)[0].replace("₹", "").replace(",", "")
+            image = soup.find("img", {"class": "_396cs4 _2amPTt _3qGmMb"})["src"]
 
-    elif 'shopsy' in url:
-        title = soup.find('span', {'class': 'B_NuCI'}).get_text(strip=True)
-        price_tag = soup.find('div', {'class': '_30jeq3 _16Jk6d'})
-        price = price_tag.get_text(strip=True).replace('₹', '').replace(',', '') if price_tag else '0'
-        return title, int(float(price)), 'Shopsy'
+        elif "ajio" in url:
+            title = soup.find("h1", {"class": "prod-title"}).get_text(strip=True)
+            price = soup.find("div", {"class": "prod-sp"}).get_text(strip=True).replace("₹", "").replace(",", "")
+            image = soup.find("img", {"class": "rilrtl-lazy-img"})["src"]
 
-except Exception as e:
-    print("Error fetching details:", e)
+        elif "shopsy" in url:
+            title = soup.find("span", {"class": "B_NuCI"}).get_text(strip=True)
+            price = re.findall(r"₹[\d,]+", res.text)[0].replace("₹", "").replace(",", "")
+            image = soup.find("img", {"class": "_396cs4 _2amPTt _3qGmMb"})["src"]
 
-return None
+        else:
+            return None
 
+        return {"title": title, "price": price, "image": image}
+    except:
+        return None
