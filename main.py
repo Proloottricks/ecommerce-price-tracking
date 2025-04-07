@@ -1,106 +1,54 @@
-# main.py
-
+from telegram.ext import Updater, CommandHandler
+from scraper import get_price_data
+from database import insert_product, get_all_products
+from utils import get_domain_name
 import os
-import re
-import logging
-import pymongo
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from scraper import scrape_amazon, scrape_flipkart, scrape_ajio, scrape_shopsy
+from dotenv import load_dotenv
 
-# Logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+load_dotenv()
 
-# Environment variables
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-MONGO_URI = os.getenv("MONGO_URI")
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# MongoDB setup
-client = pymongo.MongoClient(MONGO_URI)
-db = client["price_tracker"]
-collection = db["tracked_items"]
+def start(update, context):
+    update.message.reply_text("Send a product link from Amazon, Flipkart, Ajio, or Shopsy to track its price.")
 
-# Get site name from URL
-def get_site_name(url: str) -> str:
-    if "amazon" in url:
-        return "amazon"
-    elif "flipkart" in url:
-        return "flipkart"
-    elif "ajio" in url:
-        return "ajio"
-    elif "shopsy" in url:
-        return "shopsy"
-    else:
-        return "unknown"
-
-# Scrape dispatcher
-def scrape_price(url: str):
-    site = get_site_name(url)
-    if site == "amazon":
-        return scrape_amazon(url)
-    elif site == "flipkart":
-        return scrape_flipkart(url)
-    elif site == "ajio":
-        return scrape_ajio(url)
-    elif site == "shopsy":
-        return scrape_shopsy(url)
-    else:
-        return {"error": "Unsupported site"}
-
-# Start command
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome to Price Tracker Bot!\nSend me a product link from Amazon, Flipkart, Ajio, or Shopsy.")
-
-# Handle product link
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def track_price(update, context):
     url = update.message.text.strip()
+    chat_id = update.message.chat_id
 
-    if not re.match(r'^https?://', url):
-        await update.message.reply_text("Please send a valid product URL starting with http/https.")
+    domain = get_domain_name(url)
+    if domain not in ["amazon", "flipkart", "ajio", "shopsy"]:
+        update.message.reply_text("Only Amazon, Flipkart, Ajio, and Shopsy links are supported.")
         return
 
-    site = get_site_name(url)
-    if site == "unknown":
-        await update.message.reply_text("Only Amazon, Flipkart, Ajio, and Shopsy links are supported.")
+    data = get_price_data(url)
+    if data is None:
+        update.message.reply_text("Failed to fetch product data. Check the link.")
         return
 
-    result = scrape_price(url)
+    insert_product(chat_id, url, data['title'], data['price'], data['image'])
 
-    if "error" in result:
-        await update.message.reply_text(f"Error scraping product: {result['error']}")
+    update.message.reply_text(
+        f"Tracking started for:\n\n{data['title']}\n\nPrice: ₹{data['price']}\n\nYou’ll be notified on price drops!"
+    )
+
+def list_products(update, context):
+    chat_id = update.message.chat_id
+    products = get_all_products(chat_id)
+
+    if not products:
+        update.message.reply_text("No products tracked yet.")
         return
 
-    # Save to database
-    collection.insert_one({
-        "user_id": update.message.from_user.id,
-        "url": url,
-        "site": site,
-        "title": result["title"],
-        "price": result["price"]
-    })
+    msg = "Your Tracked Products:\n\n"
+    for p in products:
+        msg += f"{p['title']} - ₹{p['price']}\n{p['url']}\n\n"
+    update.message.reply_text(msg)
 
-    await update.message.reply_text(f"Tracking started!\n\nTitle: {result['title']}\nPrice: {result['price']}")
+def main():
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-# Main function
-if __name__ == '__main__':
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", start))
-    app.add_handler(CommandHandler("track", handle_message))
-    app.add_handler(CommandHandler("add", handle_message))
-    app.add_handler(CommandHandler("price", handle_message))
-    app.add_handler(CommandHandler("check", handle_message))
-    app.add_handler(CommandHandler("watch", handle_message))
-    app.add_handler(CommandHandler("monitor", handle_message))
-    app.add_handler(CommandHandler("link", handle_message))
-    app.add_handler(CommandHandler("url", handle_message))
-    app.add_handler(CommandHandler("product", handle_message))
-    app.add_handler(CommandHandler("start_tracking", handle_message))
-
-    # Handle any plain message as URL
-    from telegram.ext import MessageHandler, filters
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("Bot is running...")
-    app.run_polling()
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("list", list_products))
+    dp.add_handler(CommandHandler("track", track_price))
