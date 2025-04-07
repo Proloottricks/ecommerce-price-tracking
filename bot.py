@@ -16,48 +16,73 @@ from database import add_user, add_product, get_user_products
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
-logger = logging.getLogger(__name__)
 
-# /start command
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(user.id, user.username)
     await update.message.reply_text(
-        f"Hi {user.first_name}! Send me any product link from Amazon, Flipkart, Ajio or Shopsy."
+        "Welcome to the Price Tracker Bot!\n\n"
+        "Send me an Amazon, Flipkart, Ajio, or Shopsy product link to start tracking.\n\n"
+        "Use /myproducts to view your tracked items."
     )
 
-# Handle incoming product links
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
+
+async def track_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     url = update.message.text.strip()
 
-    if any(x in url for x in ["amazon", "flipkart", "ajio", "shopsy"]):
-        msg = await update.message.reply_text("Fetching product details...")
+    await update.message.reply_text("Fetching product details...")
+
+    try:
         product = get_price_details(url)
+        if not product:
+            await update.message.reply_text("Failed to fetch product details.")
+            return
 
-        if product:
-            affiliate_url = convert_to_affiliate(url)
-            add_product(user.id, product, affiliate_url)
-            reply_text = f"**{product['title']}**\n\nPrice: ₹{product['price']}\n\n[Buy Now]({affiliate_url})"
-            await msg.edit_text(reply_text, parse_mode="Markdown", disable_web_page_preview=False)
-        else:
-            await msg.edit_text("Failed to fetch product details.")
-    else:
-        await update.message.reply_text("Please send a valid product URL from supported sites.")
+        product["url"] = convert_to_affiliate(url)
+        add_product(user_id, product)
 
-# /myproducts command
+        await update.message.reply_photo(
+            photo=product["image"],
+            caption=f"*{product['title']}*\nPrice: ₹{product['price']}\n{product['url']}",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logging.error(f"Error: {e}")
+        await update.message.reply_text("Something went wrong while processing the link.")
+
+
 async def my_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     products = get_user_products(user_id)
 
     if not products:
-        await update.message.reply_text("You have not added any products yet.")
+        await update.message.reply_text("You have not tracked any products yet.")
         return
 
-    buttons = [
-        [InlineKeyboardButton(p["title"]
+    keyboard = [
+        [InlineKeyboardButton(p["title"], url=p["url"])]
+        for p in products
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Your Tracked Products:", reply_markup=reply_markup)
+
+
+def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("myproducts", my_products))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, track_product))
+
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
