@@ -1,5 +1,5 @@
-from pymongo import MongoClient
 import os
+from pymongo import MongoClient
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -9,12 +9,15 @@ client = MongoClient(MONGO_URI)
 db = client["price_tracker"]
 collection = db["products"]
 
-def insert_product(chat_id, url, title, price, image):
+def init_db():
+    client.admin.command('ping')  # Check connection
+
+def save_product(data):
     collection.update_one(
-        {"chat_id": chat_id, "url": url},
-        {"$set": {"title": title, "price": price, "image": image}},
+        {"chat_id": data["chat_id"], "url": data["url"]},
+        {"$set": data},
         upsert=True
     )
 
-def get_all_products(chat_id):
-    return list(collection.find({"chat_id": chat_id}, {"_id": 0}))
+def get_product(url, chat_id):
+    return collection.find_one({"chat_id": chat_id, "url": url})
